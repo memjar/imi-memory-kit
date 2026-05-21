@@ -21,7 +21,7 @@ Env:
   <BRAND>_MEMORY_KEY  your personal bnk_ key for the memory layer (preferred —
                       wins over an ambient AXE_API_KEY pinned elsewhere)
   <BRAND>_API_KEY     fallback key (then plain AXE_API_KEY)
-  AXE_SESSION_ID      optional session id stamped on saves / used to scope recall
+  AXE_SESSION_ID      optional session id stamped on saves (filter recall with --session)
   AXE_MEMORY_URL      override the memory layer (default https://atlas.axe.observer)
 """
 import argparse
@@ -135,9 +135,11 @@ def cmd_recall(args):
     qs = {"limit": args.limit}
     if args.mine:
         qs["mine"] = "1"
-    sess = args.session or SESSION
-    if sess:
-        qs["session"] = sess
+    # Default recall is broad (team pool + your spaces). Session scoping is
+    # opt-in via --session — auto-applying AXE_SESSION_ID would make a fresh
+    # session recall nothing, defeating "start already caught up".
+    if args.session:
+        qs["session"] = args.session
     if args.space:
         qs["space"] = args.space
     try:

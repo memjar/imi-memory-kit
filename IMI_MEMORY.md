@@ -126,7 +126,9 @@ imi-memory save "..." --kind decision --tags pulse,segmentation  # → my space
 imi-memory save "..." --share                                    # → IMI team pool
 ```
 Spaces: saves default to `person/<you>` (private to your sessions); `team/imi`
-is the shared IMI pool. Set `AXE_SESSION_ID` to auto-stamp + scope by session.
+is the shared IMI pool. `AXE_SESSION_ID` auto-stamps your saves so you can later
+filter with `recall --session <id>`; plain `recall` stays broad (team + your
+spaces) so a fresh session starts caught up.
 
 ## Identities (per-person keys)
 Each teammate gets one key named `imi-<name>`; saves are attributed to that
