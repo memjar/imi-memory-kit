@@ -18,9 +18,11 @@ machine with a key. Standard library only.
   <cli> search "<query>" [--mine] [--space S] [-k N]
 
 Env:
-  <BRAND>_API_KEY  your personal bnk_ key (falls back to AXE_API_KEY)
-  AXE_SESSION_ID   optional session id stamped on saves / used to scope recall
-  AXE_MEMORY_URL   override the memory layer (default https://atlas.axe.observer)
+  <BRAND>_MEMORY_KEY  your personal bnk_ key for the memory layer (preferred —
+                      wins over an ambient AXE_API_KEY pinned elsewhere)
+  <BRAND>_API_KEY     fallback key (then plain AXE_API_KEY)
+  AXE_SESSION_ID      optional session id stamped on saves / used to scope recall
+  AXE_MEMORY_URL      override the memory layer (default https://atlas.axe.observer)
 """
 import argparse
 import json
@@ -51,8 +53,11 @@ def _brand():
 
 BRAND = _brand()
 CLI = os.path.basename(sys.argv[0]) or (BRAND.lower() + "-memory")
-# Brand-namespaced key (IMI_API_KEY / AXE_API_KEY), falling back to AXE_API_KEY.
-KEY = (os.environ.get(BRAND + "_API_KEY") or os.environ.get("AXE_API_KEY") or "").strip()
+# Key precedence: <BRAND>_MEMORY_KEY (dedicated, wins over an ambient AXE_API_KEY
+# that a tool may pin to a different identity) → <BRAND>_API_KEY → AXE_API_KEY.
+KEY = (os.environ.get(BRAND + "_MEMORY_KEY")
+       or os.environ.get(BRAND + "_API_KEY")
+       or os.environ.get("AXE_API_KEY") or "").strip()
 
 
 def _req(method, path, body=None, timeout=15):

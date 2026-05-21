@@ -38,8 +38,10 @@ def _brand():
 
 
 BRAND = _brand()
-# Brand-namespaced key (IMI_API_KEY / AXE_API_KEY), falling back to AXE_API_KEY.
-KEY = (os.environ.get(BRAND + "_API_KEY") or os.environ.get("AXE_API_KEY") or "").strip()
+# Key precedence: <BRAND>_MEMORY_KEY → <BRAND>_API_KEY → AXE_API_KEY.
+KEY = (os.environ.get(BRAND + "_MEMORY_KEY")
+       or os.environ.get(BRAND + "_API_KEY")
+       or os.environ.get("AXE_API_KEY") or "").strip()
 
 
 def _req(path, timeout=8):
