@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""portable team continued-context for ANY AI coding session.
+
+Save to and recall from the shared memory layer (atlas.axe.observer) so every
+teammate's model carries continued context across sessions and tools. Branding
+(the command name, the <BRAND>_API_KEY env var, the team pool) is set in
+kit.conf — this same file backs both the AXE and IMI kits.
+
+Each teammate uses their OWN key so saves are attributed to them and land in
+their own space by default (a dedicated layer for their sessions). The shared
+team pool is derived server-side from your key identity; add --share to put a
+memory there. There is NO fleet/JL3/localhost dependency — this runs from any
+machine with a key. Standard library only.
+
+  <cli> whoami
+  <cli> save  "<text>" [--kind note|decision|context] [--tags a,b] [--space S] [--session ID] [--share]
+  <cli> recall [--mine] [--session ID] [--space S] [--limit N]
+  <cli> search "<query>" [--mine] [--space S] [-k N]
+
+Env:
+  <BRAND>_API_KEY  your personal bnk_ key (falls back to AXE_API_KEY)
+  AXE_SESSION_ID   optional session id stamped on saves / used to scope recall
+  AXE_MEMORY_URL   override the memory layer (default https://atlas.axe.observer)
+"""
+import argparse
+import json
+import os
+import ssl
+import sys
+import urllib.parse
+import urllib.request
+
+ATLAS = os.environ.get("AXE_MEMORY_URL", "https://atlas.axe.observer").rstrip("/")
+SESSION = os.environ.get("AXE_SESSION_ID", "").strip()
+# macOS system Python ships without a CA bundle; AXE endpoints are ours.
+_SSL = ssl._create_unverified_context()
+
+
+def _brand():
+    """Read BRAND from kit.conf next to this script (default AXE)."""
+    p = os.path.join(os.path.dirname(os.path.realpath(__file__)), "kit.conf")
+    try:
+        for line in open(p):
+            line = line.strip()
+            if line.startswith("BRAND=") and "=" in line:
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return "AXE"
+
+
+BRAND = _brand()
+CLI = os.path.basename(sys.argv[0]) or (BRAND.lower() + "-memory")
+# Brand-namespaced key (IMI_API_KEY / AXE_API_KEY), falling back to AXE_API_KEY.
+KEY = (os.environ.get(BRAND + "_API_KEY") or os.environ.get("AXE_API_KEY") or "").strip()
+
+
+def _req(method, path, body=None, timeout=15):
+    data = json.dumps(body).encode() if body is not None else None
+    headers = {"Content-Type": "application/json"}
+    if KEY:
+        headers["X-API-Key"] = KEY
+    req = urllib.request.Request(ATLAS + path, data=data, method=method, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout, context=_SSL) as r:
+        return json.loads(r.read())
+
+
+def whoami():
+    if not KEY:
+        return None
+    try:
+        d = _req("POST", "/api/keys/validate", {"key": KEY}).get("data", {})
+        return d.get("name") if d.get("valid") else None
+    except Exception:
+        return None
+
+
+def _print_rows(rows):
+    if not rows:
+        print(f"(none yet — save one with: {CLI} save \"...\")")
+        return
+    for row in rows:
+        meta = row.get("metadata") or {}
+        who = meta.get("principal", row.get("node_id", "?"))
+        kind = meta.get("kind", "note")
+        space = meta.get("space", "—")
+        when = (row.get("created_at") or "")[:16].replace("T", " ")
+        tags = meta.get("tags") or []
+        tagstr = f" [{','.join(tags)}]" if tags else ""
+        body = (row.get("description") or row.get("title") or "").strip()
+        print(f"- ({when}) {who}/{kind}{tagstr} {{{space}}}: {body}")
+
+
+def cmd_whoami(_):
+    who = whoami()
+    if who:
+        print(who)
+        return 0
+    print(f"no identity — set {BRAND}_API_KEY to your personal bnk_ key", file=sys.stderr)
+    return 1
+
+
+def cmd_save(args):
+    if not KEY:
+        print(f"{BRAND}_API_KEY required to save", file=sys.stderr)
+        return 1
+    body = {
+        "content": args.text.strip(),
+        "kind": args.kind,
+        "tags": [t.strip() for t in (args.tags or "").split(",") if t.strip()],
+        "source": BRAND.lower() + "-memory",
+    }
+    if args.space:
+        body["space"] = args.space
+    elif args.share:
+        body["share"] = True
+    sess = args.session or SESSION
+    if sess:
+        body["sessionId"] = sess
+    try:
+        d = _req("POST", "/api/memory/save", body).get("data", {})
+    except Exception as e:
+        print(f"save failed: {e}", file=sys.stderr)
+        return 1
+    print(f"saved as {d.get('principal')} -> {d.get('space')} / {d.get('id')}")
+    return 0
+
+
+def cmd_recall(args):
+    qs = {"limit": args.limit}
+    if args.mine:
+        qs["mine"] = "1"
+    sess = args.session or SESSION
+    if sess:
+        qs["session"] = sess
+    if args.space:
+        qs["space"] = args.space
+    try:
+        d = _req("GET", "/api/memory/recall?" + urllib.parse.urlencode(qs)).get("data", {})
+    except Exception as e:
+        print(f"recall failed: {e}", file=sys.stderr)
+        return 1
+    print(f"=== {BRAND} MEMORY — {d.get('scope', '?')} (most recent {d.get('count', 0)}) ===")
+    _print_rows(d.get("rows") or [])
+    return 0
+
+
+def cmd_search(args):
+    qs = {"q": args.query, "k": args.k}
+    if args.mine:
+        qs["mine"] = "1"
+    if args.space:
+        qs["space"] = args.space
+    try:
+        d = _req("GET", "/api/memory/search?" + urllib.parse.urlencode(qs)).get("data", {})
+    except Exception as e:
+        print(f"search failed: {e}", file=sys.stderr)
+        return 1
+    print(f"=== {BRAND} MEMORY search '{args.query}' ({d.get('count', 0)}) ===")
+    _print_rows(d.get("rows") or [])
+    return 0
+
+
+def main():
+    p = argparse.ArgumentParser(prog=CLI, description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd")
+
+    sub.add_parser("whoami", help="show the identity behind your key")
+
+    sv = sub.add_parser("save", help="save a memory (lands in your space by default)")
+    sv.add_argument("text", help="the memory text")
+    sv.add_argument("--tags", default="", help="comma-separated tags")
+    sv.add_argument("--kind", default="note", help="note|decision|context|...")
+    sv.add_argument("--share", action="store_true", help="share with your team pool (else private to you)")
+    sv.add_argument("--space", default="", help="explicit target space (overrides --share)")
+    sv.add_argument("--session", default="", help="session id (else AXE_SESSION_ID)")
+
+    rc = sub.add_parser("recall", help="recall continued context")
+    rc.add_argument("--mine", action="store_true", help="only my own spaces")
+    rc.add_argument("--session", default="", help="scope to a session id")
+    rc.add_argument("--space", default="", help="scope to one space subtree")
+    rc.add_argument("--limit", type=int, default=12, help="max rows (default 12)")
+
+    se = sub.add_parser("search", help="keyword search your visible memory")
+    se.add_argument("query", help="search text")
+    se.add_argument("--mine", action="store_true", help="only my own spaces")
+    se.add_argument("--space", default="", help="scope to one space subtree")
+    se.add_argument("-k", type=int, default=12, help="max rows (default 12)")
+
+    args = p.parse_args()
+    if not args.cmd:
+        p.print_help()
+        return 0
+    return {"whoami": cmd_whoami, "save": cmd_save,
+            "recall": cmd_recall, "search": cmd_search}[args.cmd](args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

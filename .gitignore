@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.imi-memory.env
+.axe-memory.env
+*.kittmp
