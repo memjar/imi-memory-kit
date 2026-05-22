@@ -49,6 +49,7 @@ strip_block() { # file start end
 uninstall() {
   strip_block "$PROFILE" "$START" "$END"
   strip_block "$CLAUDE_MD" "$MD_START" "$MD_END"
+  strip_block "$HOME/.cursor/rules" "<!-- $MARKER:cursor:start -->" "<!-- $MARKER:cursor:end -->"
   rm -f "$ENV_FILE"
   if [ -f "$SETTINGS" ] && [ -n "$PYBIN" ]; then
     SETTINGS="$SETTINGS" HOOK_PATH="$HOOK_PATH" "$PYBIN" - <<'PY'
@@ -132,7 +133,40 @@ $MD_END
 EOF
 echo "✓ added protocol to $CLAUDE_MD"
 
+# ── 5. Cursor rules → tells Cursor agent to recall/save ──
+CURSOR_RULES="$HOME/.cursor/rules"
+CURSOR_START="<!-- $MARKER:cursor:start -->"
+CURSOR_END="<!-- $MARKER:cursor:end -->"
+strip_block "$CURSOR_RULES" "$CURSOR_START" "$CURSOR_END"
+if [ -d "$HOME/.cursor" ] || [ -f "$CURSOR_RULES" ]; then
+  mkdir -p "$(dirname "$CURSOR_RULES")"
+  cat >> "$CURSOR_RULES" <<EOF
+
+$CURSOR_START
+## $BRAND Memory — team continued context
+
+\`$CLI_NAME\` is installed at \`$(command -v "$CLI_NAME" 2>/dev/null || echo "$KIT_DIR/$CLI_NAME")\`.
+Use it to share context with teammates across tools and sessions.
+
+**Session start:** \`$CLI_NAME recall\`
+**Save a decision:** \`$CLI_NAME save "..." --kind decision --tags <area>\`
+**Search:** \`$CLI_NAME search "<keyword>"\`
+**Add to team pool:** append \`--share\`
+
+Kind options: note | decision | finding | task
+Do this for any cross-session or cross-teammate context — architecture calls,
+client preferences, data findings worth remembering.
+$CURSOR_END
+EOF
+  echo "✓ added $BRAND memory protocol to $CURSOR_RULES"
+else
+  echo "  (Cursor not detected — skipping ~/.cursor/rules)"
+fi
+
 echo ""
 echo "Done. $BRAND memory is attached as $WHO."
 echo "→ run:  source \"$ENV_FILE\"   (or open a new terminal)"
 echo "→ then: $CLI_NAME recall"
+echo ""
+echo "  Claude Code: auto-recalls at session start (SessionStart hook active)"
+echo "  Cursor:      see ~/.cursor/rules for the $BRAND Memory section"

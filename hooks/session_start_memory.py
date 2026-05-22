@@ -53,32 +53,38 @@ def _req(path, timeout=8):
         return json.loads(r.read())
 
 
+def _author(row: dict) -> str:
+    tags = (row.get("metadata") or {}).get("tags") or []
+    for t in tags:
+        if t.startswith("from:"):
+            return t[5:]
+    return (row.get("metadata") or {}).get("principal", row.get("node_id", "?"))
+
+
 def main():
     lines = []
 
     try:
-        f = (_req("/api/context") or {}).get("data", {}).get("fleet") or {}
-        if f:
-            lines.append(f"Fleet: {f.get('total_tables','?')} tables / "
-                         f"{f.get('total_rows','?')} rows / {f.get('db_size','?')}")
-    except Exception:
-        pass
-
-    try:
-        d = (_req("/api/memory/recall?limit=6") or {}).get("data", {})
-        for r in d.get("rows") or []:
+        d = (_req("/api/memory/recall?limit=8") or {}).get("data", {})
+        scope = d.get("scope", "")
+        rows = d.get("rows") or []
+        if rows:
+            lines.append(f"Team pool: {scope} ({d.get('count', len(rows))} memories)")
+        for r in rows:
             meta = r.get("metadata") or {}
-            who = meta.get("principal", r.get("node_id", "?"))
-            when = (r.get("created_at") or "")[:16].replace("T", " ")
-            lines.append(f"{when} {who}/{meta.get('kind','note')} "
-                         f"{{{meta.get('space','—')}}}: {r.get('title','')}")
+            who = _author(r)
+            when = (r.get("created_at") or "")[:10]
+            kind = meta.get("kind", "note")
+            lines.append(f"{when} [{who}/{kind}] {r.get('title','')}")
     except Exception:
         pass
 
     if lines:
-        ctx = (f"{BRAND} MEMORY — continued context (atlas.axe.observer, SessionStart):\n- "
+        cli = BRAND.lower() + "-memory"
+        ctx = (f"{BRAND} MEMORY — team context injected at session start:\n- "
                + "\n- ".join(lines)
-               + f"\n(save new context with: {BRAND.lower()}-memory save \"...\")")
+               + f"\n\nSave new context: {cli} save \"...\" --kind decision"
+               + f"\nSearch: {cli} search \"<keyword>\"")
         print(json.dumps({"additionalContext": ctx}))
     else:
         print("{}")
