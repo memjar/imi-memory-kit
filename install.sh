@@ -54,6 +54,7 @@ CLAUDE_MD="$HOME/.claude/CLAUDE.md"
 PYBIN="$(command -v python3 || true)"
 HOOK_PATH="$KIT_DIR/hooks/session_start_memory.py"
 STOP_HOOK_PATH="$KIT_DIR/hooks/session_stop_memory.py"
+CHECKPOINT_HOOK_PATH="$KIT_DIR/hooks/session_prompt_checkpoint.py"
 START="# >>> $MARKER >>>"
 END="# <<< $MARKER <<<"
 MD_START="<!-- $MARKER:start -->"
@@ -140,16 +141,19 @@ strip_block "$PROFILE" "$START" "$END"
 { echo "$START"; echo "[ -f \"$ENV_FILE\" ] && source \"$ENV_FILE\""; echo "$END"; } >> "$PROFILE"
 echo "✓ wired $PROFILE"
 
-# ── 3. Claude Code hooks: SessionStart (recall) + PostCompact (re-recall) + Stop (save nudge) ──
+# ── 3. Claude Code hooks: SessionStart + PostCompact + Stop + UserPromptSubmit ──
 mkdir -p "$(dirname "$SETTINGS")"
 START_CMD="$PYBIN $HOOK_PATH"
 STOP_CMD="$PYBIN $STOP_HOOK_PATH"
+CHECKPOINT_CMD="$PYBIN $CHECKPOINT_HOOK_PATH"
 SETTINGS="$SETTINGS" START_CMD="$START_CMD" START_HOOK="$HOOK_PATH" \
-  STOP_CMD="$STOP_CMD" STOP_HOOK="$STOP_HOOK_PATH" "$PYBIN" - <<'PY'
+  STOP_CMD="$STOP_CMD" STOP_HOOK="$STOP_HOOK_PATH" \
+  CHECKPOINT_CMD="$CHECKPOINT_CMD" CHECKPOINT_HOOK="$CHECKPOINT_HOOK_PATH" "$PYBIN" - <<'PY'
 import json,os
 p=os.environ["SETTINGS"]
 start_cmd=os.environ["START_CMD"]; start_hook=os.environ["START_HOOK"]
 stop_cmd=os.environ["STOP_CMD"];   stop_hook=os.environ["STOP_HOOK"]
+chk_cmd=os.environ["CHECKPOINT_CMD"]; chk_hook=os.environ["CHECKPOINT_HOOK"]
 d={}
 if os.path.exists(p):
     try: d=json.load(open(p))
@@ -167,9 +171,13 @@ if not any(start_hook in c.get("command","") for g in pc for c in g.get("hooks",
 st=h.setdefault("Stop",[])
 if not any(stop_hook in c.get("command","") for g in st for c in g.get("hooks",[])):
     st.append({"hooks":[{"type":"command","command":stop_cmd}]})
+# UserPromptSubmit — periodic mid-session checkpoint every N turns
+up=h.setdefault("UserPromptSubmit",[])
+if not any(chk_hook in c.get("command","") for g in up for c in g.get("hooks",[])):
+    up.append({"hooks":[{"type":"command","command":chk_cmd}]})
 json.dump(d,open(p,"w"),indent=2)
 PY
-echo "✓ installed SessionStart + PostCompact + Stop hooks in $SETTINGS"
+echo "✓ installed SessionStart + PostCompact + Stop + UserPromptSubmit hooks in $SETTINGS"
 
 # ── 4. the protocol block → tells the model to recall/save ──
 strip_block "$CLAUDE_MD" "$MD_START" "$MD_END"
@@ -211,7 +219,16 @@ then run the command with their answer.
 
 Always include \`--share\` so the whole team sees it. Kind options: note | decision | finding | task
 EOF
-echo "✓ installed /${_BRAND_LOWER}-recall and /${_BRAND_LOWER}-save commands in $_CMD_DIR"
+cat > "$_CMD_DIR/${_BRAND_LOWER}-checkpoint.md" <<EOF
+Review this session so far and identify every decision, finding, or client preference worth saving.
+
+For each significant item, run:
+\`$CLI_NAME save "<1-2 sentence summary>" --kind decision|finding --share --tags ${_BRAND_LOWER},<area>\`
+
+Save ALL significant items before continuing. If there is genuinely nothing worth saving from
+this session so far, say so in one sentence. Do not skip saves out of uncertainty — if in doubt, save it.
+EOF
+echo "✓ installed /${_BRAND_LOWER}-recall, /${_BRAND_LOWER}-save, and /${_BRAND_LOWER}-checkpoint commands in $_CMD_DIR"
 
 # ── 6. Cursor rules → tells Cursor agent to recall/save ──
 CURSOR_RULES="$HOME/.cursor/rules"
@@ -250,8 +267,9 @@ echo "→ run:  source \"$ENV_FILE\"   (or open a new terminal)"
 echo "→ then: $CLI_NAME recall"
 echo ""
 echo "  Claude Code hooks wired:"
-echo "    SessionStart  — injects team context at session open"
-echo "    PostCompact   — re-injects after /compact so memory survives compression"
-echo "    Stop          — nudges Claude to save a wrap-up if nothing saved this session"
-echo "  Slash commands: /${_BRAND_LOWER}-recall  /${_BRAND_LOWER}-save"
+echo "    SessionStart       — injects team context at session open"
+echo "    PostCompact        — re-injects after /compact so memory survives compression"
+echo "    Stop               — nudges Claude to save a wrap-up if nothing saved this session"
+echo "    UserPromptSubmit   — periodic mid-session checkpoint every 10 turns"
+echo "  Slash commands: /${_BRAND_LOWER}-recall  /${_BRAND_LOWER}-save  /${_BRAND_LOWER}-checkpoint"
 echo "  Cursor:  see ~/.cursor/rules for the $BRAND Memory section"
