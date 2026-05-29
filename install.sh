@@ -197,6 +197,11 @@ teammates' sessions via \`$CLI_NAME\` (backed by atlas.axe.observer).
   Do NOT let context die in this session. If in doubt, save it.
 - **Search before re-deriving:** \`$CLI_NAME search "<keyword>"\` — a teammate may have already logged it.
 - **Use /${_BRAND_LOWER}-recall** and **/${_BRAND_LOWER}-save** slash commands for zero-friction access.
+- **BEFORE / AFTER discipline for production customer-facing surfaces** (live sites, public APIs, customer-visible repos): save TWO paired entries.
+  BEFORE → \`$CLI_NAME save "BEFORE <surface> @ <iso-ts>: <verbatim text + sha256>" --kind context --share --tags ${_BRAND_LOWER},<surface>,before\`
+  AFTER  → \`$CLI_NAME save "AFTER <surface> @ <iso-ts>: <new text + post-fix sha256 + read-after-write verify>" --kind decision --share --tags ${_BRAND_LOWER},<surface>,after,verified\`
+  Use a shared <surface>-<change-id> tag to link them. This is the canonical audit trail; required for any production-touching change.
+- **Audit-surface coverage:** when sweeping a public surface for a rule (prohibited word, deprecated brand, etc.), verify the source-of-truth for that surface is actually in a repo you searched. Production-droplet-only or CMS-only sources (e.g., a static site served from \`/var/www\` with no git mirror) need a separate sweep — \`grep -r ~/work\` doesn't catch them. Enumerate all customer surfaces upfront, then verify source location before scoping.
 $MD_END
 EOF
 echo "✓ added protocol to $CLAUDE_MD"
