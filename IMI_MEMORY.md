@@ -62,6 +62,17 @@ is your identity — every save is attributed to you; the installer keeps it in 
 >   share with the IMI team, add `--share`.
 > - Save the *why* and the *outcome*, not a play-by-play. One good memory per
 >   meaningful step beats ten noisy ones.
+> - **BEFORE / AFTER discipline for any change to a production customer-facing
+>   surface** (live site, public API, customer-visible repo): save TWO paired
+>   entries. BEFORE captures verbatim text + sha256 + timestamp; AFTER captures
+>   the replacement + post-fix sha256 + a local read-after-write verification.
+>   Use a shared `<surface>-<change-id>` tag fragment to link them. This is the
+>   canonical audit trail; the BEFORE locks reality before you touched it, the
+>   AFTER locks the verified post-state.
+> - **Audit-surface coverage**: when sweeping a surface for a rule, verify the
+>   source-of-truth for that surface is in a repo you searched. Production-only
+>   or CMS-only sources need a separate sweep — `grep -r ~/work` does not catch
+>   files served from `/var/www` with no git mirror.
 
 Paste that block into:
 - **Claude Code** → your `CLAUDE.md` (project or `~/.claude/CLAUDE.md`).
